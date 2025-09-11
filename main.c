@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <gmp.h>
+#include <time.h>
+#include <assert.h>
 
 #define MAX_N 30
 
@@ -15,12 +17,13 @@ static mpq_t pivot_static, factor_static, temp_static;
 static mpq_t Lr_static[MAX_N][MAX_N];
 static mpq_t b_static[MAX_N];
 static mpq_t V[MAX_N];
+static mpq_t ur, lr;
 
 static int G[MAX_N][MAX_N] = {0};
 
 
 void init_static_vars() {
-  mpq_inits(pivot_static, factor_static, temp_static, NULL);
+  mpq_inits(pivot_static, factor_static, temp_static, ur, lr, NULL);
   for (int i = 0; i < MAX_N; i++) {
     mpq_init(rhs_static[i]);
     mpq_init(b_static[i]);
@@ -179,7 +182,8 @@ void gen_m2(int size, int k, int row, const int groups[MAX_N], int group_index, 
     }
 
     int max_to_use = k - (size - row - 2);
-    if (max_to_use < 1) return;
+    assert(max_to_use > 0 && "max_to_use must be positive");
+
     int current_sum = 0;
     if (group_index == group_count - 1) {
       // last group
@@ -216,7 +220,8 @@ void gen_m2(int size, int k, int row, const int groups[MAX_N], int group_index, 
       // }
       // ----
       // continue recursively
-      if (group_index == group_count - 1) {
+      if (group_index == group_count - 1 || current_sum == max_to_use) {
+        // if this was the last group or if we used max already - go to the next row
         gen_m(size, k - current_sum, row + 1);
       } else {
         gen_m2(size, k - current_sum, row, groups, group_index + 1, group_count);
@@ -270,14 +275,32 @@ void gen_m(int size, int k, int row) {
       set_g(row, row + 1, k);
 
       // TODO: calc instead of printing
-      printf("Conductance matrix G for size=%d:\n", size);
-      for (int i = 0; i < size; i++) {
-        for (int j = 0; j < size; j++) {
-          printf("%d ", G[i][j]);
+      // ----
+      // printf("Conductance matrix G for size=%d:\n", size);
+      // for (int i = 0; i < size; i++) {
+      //   for (int j = 0; j < size; j++) {
+      //     printf("%d ", G[i][j]);
+      //   }
+      //   printf("\n");
+      // }
+      // printf("---\n");
+      // ----
+
+      calculate_voltage_vector_from_conductance(size);
+
+      int cmp = mpq_cmp_si(V[0], 1, 1);
+      if (cmp < 0) {
+        int cmp1 = mpq_cmp(V[0], lr);
+        if (cmp1 > 0) {
+          mpq_set(lr, V[0]);
         }
-        printf("\n");
+      } else if (cmp > 0) {
+        int cmp1 = mpq_cmp(V[0], ur);
+        if (cmp1 < 0) {
+          mpq_set(ur, V[0]);
+        }
       }
-      printf("---\n");
+
       // clear
       set_g(row, row + 1, 0);
     } else {
@@ -323,23 +346,48 @@ void clear_g(int size) {
   memset(G, 0, sizeof(G));
 }
 
+void gen_all(int k) {
+  clock_t start = clock();
+
+  mpq_set_si(lr, 0, 1);
+  mpq_set_si(ur, k + 1, 1);
+  for (int size = 2; size <= k + 1; size++) {
+    memset(G, 0, sizeof(G));
+    gen_m(size, k, 0);
+  }
+  gmp_printf("for k = %d lr = %Qd ur = %Qd t=%f\n", k, lr, ur, (float) (clock() - start) / CLOCKS_PER_SEC);
+  fflush(stdout);
+}
+
+
 int main() {
   init_static_vars();
+
+  // 0 1 1 0 0 0
+  // 1 0 0 1 1 0
+  // 1 0 0 1 0 1
+
+  // set_g(0, 1, 1);
+  // set_g(0, 2, 1);
+  // set_g(1, 3, 1);
+  // set_g(1, 4, 1);
+  // set_g(2, 3, 1);
+  // set_g(2, 5, 1);
+
+
+  // gen_m(6, 2, 3);
+
+  // gen_all(8);
 
   // int groups[MAX_N];
   // memset(groups, 0, sizeof(groups));
   // gen_m2(10, 14, 0, groups, 0, 2);
 
 
-  for (int k = 1; k <= 6; k++) {
-    printf("k = %d\n", k);
-    fflush(stdout);
-    for (int size = 2; size <= k + 1; size++) {
-      printf("size = %d\n", size);
-      memset(G, 0, sizeof(G));
-
-      gen_m(size, k, 0);
-    }
+  for (int k = 1; k <= 20; k++) {
+    // printf("k = %d\n", k);
+    // fflush(stdout);
+    gen_all(k);
   }
 
 
