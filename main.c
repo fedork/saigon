@@ -16,15 +16,24 @@ static int64_t Mi[MAX_N][MAX_N];
 static int64_t rhsi[MAX_N];
 static mpq_t temp;
 static mpq_t V[MAX_N];
+static mpq_t lower_V[MAX_N];
+static mpq_t upper_V[MAX_N];
 static mpq_t upper_r, lower_r;
 
 static int G[MAX_N][MAX_N] = {0};
+static int lower_G[MAX_N][MAX_N];
+static int upper_G[MAX_N][MAX_N];
+static int lower_size;
+static int upper_size;
+static clock_t start;
 
 
 void init_static_vars() {
   mpq_inits(temp, upper_r, lower_r, NULL);
   for (int i = 0; i < MAX_N; i++) {
     mpq_init(V[i]);
+    mpq_init(lower_V[i]);
+    mpq_init(upper_V[i]);
   }
 }
 
@@ -40,11 +49,7 @@ void bareiss_solve(int n) {
   int64_t prev_pivot = 1;
   for (int k = 0; k < n - 1; k++) {
     int64_t pivot = Mi[k][k];
-    if (pivot == 0) {
-        // This would indicate a singular matrix, which shouldn't happen for valid circuits.
-        // You might want to add more robust error handling here.
-        return; 
-    }
+    assert(pivot != 0);
     for (int i = k + 1; i < n; i++) {
       for (int j = k + 1; j < n; j++) {
         __int128 val = (__int128) Mi[i][j] * pivot - (__int128) Mi[i][k] * Mi[k][j];
@@ -62,11 +67,11 @@ void bareiss_solve(int n) {
     mpq_set_si(V[i], rhsi[i], 1);
     for (int j = i + 1; j < n; j++) {
       mpq_set_si(temp, Mi[i][j], 1);
-      mpq_mul(temp, temp, V[j]);  // temp = Mi[i][j] * V[j]
+      mpq_mul(temp, temp, V[j]); // temp = Mi[i][j] * V[j]
       mpq_sub(V[i], V[i], temp);
     }
     mpq_set_si(temp, Mi[i][i], 1);
-    mpq_div(V[i], V[i], temp);  // V[i] /= Mi[i][i]
+    mpq_div(V[i], V[i], temp); // V[i] /= Mi[i][i]
   }
 }
 
@@ -295,11 +300,21 @@ void gen_m(int size, int k, int row, int max_sink_links) {
       int cmp1 = mpq_cmp(V[0], lower_r);
       if (cmp1 > 0) {
         mpq_set(lower_r, V[0]);
+        memcpy(lower_G, G, sizeof(G));
+        lower_size = size;
+        for (int i = 0; i < size; i++) {
+          mpq_set(lower_V[i], V[i]);
+        }
       }
     } else if (cmp > 0) {
       int cmp1 = mpq_cmp(V[0], upper_r);
       if (cmp1 < 0) {
         mpq_set(upper_r, V[0]);
+        memcpy(upper_G, G, sizeof(G));
+        upper_size = size;
+        for (int i = 0; i < size; i++) {
+          mpq_set(upper_V[i], V[i]);
+        }
       }
     }
 
@@ -348,25 +363,45 @@ void clear_g(int size) {
 }
 
 void gen_all(int k) {
-  clock_t start = clock();
-
   mpq_set_si(lower_r, 0, 1);
   mpq_set_si(upper_r, k + 1, 1);
   for (int size = 2; size <= k + 1; size++) {
     memset(G, 0, sizeof(G));
     gen_m(size, k, 0, k);
   }
-  gmp_printf("for k = %d lr = %Qd ur = %Qd t=%f\n",
-             k,
-             lower_r,
-             upper_r,
-             (float) (clock() - start) / CLOCKS_PER_SEC);
+  gmp_printf("for k = %d lr = %Qd ur = %Qd t=%ds\n", k, lower_r, upper_r, (long) (clock() - start) / CLOCKS_PER_SEC);
+  printf("Lower G matrix (size %d):\n", lower_size);
+  for (int i = 0; i < lower_size; i++) {
+    for (int j = 0; j < lower_size; j++) {
+      printf("%d ", lower_G[i][j]);
+    }
+    printf("\n");
+  }
+  printf("Lower voltage vector:\n");
+  for (int i = 0; i < lower_size - 1; i++) {
+    gmp_printf("%Qd ", lower_V[i]);
+  }
+  printf("\nUpper G matrix (size %d):\n", upper_size);
+  for (int i = 0; i < upper_size; i++) {
+    for (int j = 0; j < upper_size; j++) {
+      printf("%d ", upper_G[i][j]);
+    }
+    printf("\n");
+  }
+
+  printf("Upper voltage vector:\n");
+  for (int i = 0; i < upper_size - 1; i++) {
+    gmp_printf("%Qd ", upper_V[i]);
+  }
+  printf("\n");
+
   fflush(stdout);
 }
 
 
 int main() {
   init_static_vars();
+  start = clock();
 
   // 0 1 1 0 0 0
   // 1 0 0 1 1 0
