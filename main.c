@@ -362,6 +362,20 @@ void clear_g(int size) {
   memset(G, 0, sizeof(G));
 }
 
+void print_adjacency_vector(int size, const int matrix[MAX_N][MAX_N]) {
+  int first = 1;
+  for (int i = 0; i < size; i++) {
+    for (int j = i + 1; j < size; j++) {
+      if (matrix[i][j] > 0) {
+        if (!first) printf(",");
+        first = 0;
+        printf("[%d,%d]", i + 1, j + 1);
+        if (matrix[i][j] > 1) printf("^%d", matrix[i][j]);
+      }
+    }
+  }
+}
+
 void gen_all(int k) {
   mpq_set_si(lower_r, 0, 1);
   mpq_set_si(upper_r, k + 1, 1);
@@ -369,27 +383,20 @@ void gen_all(int k) {
     memset(G, 0, sizeof(G));
     gen_m(size, k, 0, k);
   }
-  gmp_printf("for k = %d lr = %Qd ur = %Qd t=%ds\n", k, lower_r, upper_r, (long) (clock() - start) / CLOCKS_PER_SEC);
-  printf("Lower G matrix (size %d):\n", lower_size);
-  for (int i = 0; i < lower_size; i++) {
-    for (int j = 0; j < lower_size; j++) {
-      printf("%d ", lower_G[i][j]);
-    }
-    printf("\n");
-  }
-  printf("Lower voltage vector:\n");
+  gmp_printf("for k = %d lr = %Qd ur = %Qd t=%ds\n",
+             k,
+             lower_r,
+             upper_r,
+             (long) (clock() - start) / CLOCKS_PER_SEC);
+  printf("Lower G: ");
+  print_adjacency_vector(lower_size, lower_G);
+  printf("\nLower voltage vector:\n");
   for (int i = 0; i < lower_size - 1; i++) {
     gmp_printf("%Qd ", lower_V[i]);
   }
-  printf("\nUpper G matrix (size %d):\n", upper_size);
-  for (int i = 0; i < upper_size; i++) {
-    for (int j = 0; j < upper_size; j++) {
-      printf("%d ", upper_G[i][j]);
-    }
-    printf("\n");
-  }
-
-  printf("Upper voltage vector:\n");
+  printf("\nUpper G: ");
+  print_adjacency_vector(upper_size, upper_G);
+  printf("\nUpper voltage vector:\n");
   for (int i = 0; i < upper_size - 1; i++) {
     gmp_printf("%Qd ", upper_V[i]);
   }
