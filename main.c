@@ -182,11 +182,7 @@ void gen_m2(int size, int k, int row, const int groups[MAX_N], int group_index, 
   }
 
   int max_to_use = k - (size - row - 2);
-  if (group_index == 0 && max_to_use > max_sink_links - 1) {
-    max_to_use = max_sink_links - 1; // need to leave one for last row
-  } else {
-    assert(max_to_use > 0 && "max_to_use must be positive");
-  }
+  assert(max_to_use > 0 && "max_to_use must be positive");
 
   int current_sum = 0;
   if (group_index == group_count - 1) {
@@ -223,12 +219,7 @@ void gen_m2(int size, int k, int row, const int groups[MAX_N], int group_index, 
     // }
     // ----
     // continue recursively
-    int max_sink_link_next;
-    if (group_index == 0)
-      max_sink_link_next = max_sink_links - current_sum;
-    else {
-      max_sink_link_next = max_sink_links;
-    }
+    int max_sink_link_next = group_index == 0 ? max_sink_links - current_sum : max_sink_links;
     if (group_index == group_count - 1 || current_sum == max_to_use) {
       // if this was the last group or if we used max already - go to the next row
       if (row == 0) {
@@ -244,8 +235,10 @@ void gen_m2(int size, int k, int row, const int groups[MAX_N], int group_index, 
       gen_m2(size, k - current_sum, row, groups, group_index + 1, group_count, max_sink_link_next);
     }
 
-    if (current_sum == max_to_use || (i > 0 && i == group_size - 1 && G[row][group_indices[i]] ==
-      G[row][group_indices[i - 1]])) {
+    if (current_sum == max_to_use
+      || (group_index == 0 && current_sum == max_sink_links - 1)
+      || (i > 0 && i == group_size - 1
+        && G[row][group_indices[i]] == G[row][group_indices[i - 1]])) {
       // used up, backtrack
       if (i == 0) {
         // no more partitions
@@ -394,18 +387,11 @@ int main() {
   // set_g(2, 5, 1);
 
 
-  // gen_m(6, 2, 3);
+  // gen_m(4, 4, 0, 4);
 
-  // gen_all(8);
+  // gen_all(4);
 
-  // int groups[MAX_N];
-  // memset(groups, 0, sizeof(groups));
-  // gen_m2(10, 14, 0, groups, 0, 2);
-
-
-  for (int k = 1; k <= 20; k++) {
-    // printf("k = %d\n", k);
-    // fflush(stdout);
+  for (int k = 1; k < MAX_N; k++) {
     gen_all(k);
   }
 
