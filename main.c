@@ -3,6 +3,7 @@
 #include <string.h>
 #include <gmp.h>
 #include <time.h>
+#include <stdint.h>
 #include <assert.h>
 
 #define MAX_N 30
@@ -11,11 +12,9 @@
 #define fwd_row_count (size - base_row)
 
 // Static storage for temporary variables (up to MAX_NxMAX_N matrices)
-static mpq_t M[MAX_N][MAX_N];
-static mpq_t rhs[MAX_N];
-static mpq_t pivot, factor, temp;
-static mpq_t Lr[MAX_N][MAX_N];
-static mpq_t b[MAX_N];
+static int64_t Mi[MAX_N][MAX_N];
+static int64_t rhsi[MAX_N];
+static mpq_t temp;
 static mpq_t V[MAX_N];
 static mpq_t upper_r, lower_r;
 
@@ -23,56 +22,51 @@ static int G[MAX_N][MAX_N] = {0};
 
 
 void init_static_vars() {
-  mpq_inits(pivot, factor, temp, upper_r, lower_r, NULL);
+  mpq_inits(temp, upper_r, lower_r, NULL);
   for (int i = 0; i < MAX_N; i++) {
-    mpq_init(rhs[i]);
-    mpq_init(b[i]);
     mpq_init(V[i]);
-    for (int j = 0; j < MAX_N; j++) {
-      mpq_init(M[i][j]);
-      mpq_init(Lr[i][j]);
-    }
   }
 }
 
-// ---------- Bareiss elimination (fraction-free) ----------
+// ---------- Bareiss elimination (fraction-free on integers) ----------
 
+/*
+ * Integer Bareiss elimination followed by mpq_t back-substitution.
+ * Uses global Mi (n x n) and rhsi (n), writes results to V (mpq_t).
+ * Mi and rhsi are modified in-place during elimination.
+ */
 void bareiss_solve(int n) {
-  for (int i = 0; i < n; i++) {
-    for (int j = 0; j < n; j++) {
-      mpq_set(M[i][j], Lr[i][j]);
-    }
-    mpq_set(rhs[i], b[i]);
-  }
-
-  // Elimination
+  // Elimination (fraction-free on int64_t)
+  int64_t prev_pivot = 1;
   for (int k = 0; k < n - 1; k++) {
-    mpq_set(pivot, M[k][k]);
+    int64_t pivot = Mi[k][k];
+    if (pivot == 0) {
+        // This would indicate a singular matrix, which shouldn't happen for valid circuits.
+        // You might want to add more robust error handling here.
+        return; 
+    }
     for (int i = k + 1; i < n; i++) {
       for (int j = k + 1; j < n; j++) {
-        mpq_mul(temp, M[i][k], M[k][j]);
-        mpq_mul(factor, M[i][j], pivot);
-        mpq_sub(temp, temp, factor);
-        mpq_div(M[i][j],
-                temp,
-                (k == 0) ? pivot : M[k - 1][k - 1]);
+        __int128 val = (__int128) Mi[i][j] * pivot - (__int128) Mi[i][k] * Mi[k][j];
+        Mi[i][j] = (int64_t) (val / prev_pivot);
       }
       // RHS update
-      mpq_mul(temp, M[i][k], rhs[k]);
-      mpq_mul(factor, rhs[i], pivot);
-      mpq_sub(temp, temp, factor);
-      mpq_div(rhs[i], temp, (k == 0) ? pivot : M[k - 1][k - 1]);
+      __int128 val_rhs = (__int128) rhsi[i] * pivot - (__int128) Mi[i][k] * rhsi[k];
+      rhsi[i] = (int64_t) (val_rhs / prev_pivot);
     }
+    prev_pivot = pivot;
   }
 
-  // Back substitution
+  // Back substitution with mpq_t
   for (int i = n - 1; i >= 0; i--) {
-    mpq_set(V[i], rhs[i]);
+    mpq_set_si(V[i], rhsi[i], 1);
     for (int j = i + 1; j < n; j++) {
-      mpq_mul(temp, M[i][j], V[j]);
+      mpq_set_si(temp, Mi[i][j], 1);
+      mpq_mul(temp, temp, V[j]);  // temp = Mi[i][j] * V[j]
       mpq_sub(V[i], V[i], temp);
     }
-    mpq_div(V[i], V[i], M[i][i]);
+    mpq_set_si(temp, Mi[i][i], 1);
+    mpq_div(V[i], V[i], temp);  // V[i] /= Mi[i][i]
   }
 }
 
@@ -96,20 +90,19 @@ void calculate_voltage_vector_from_conductance(const int N) {
       if (k == i) continue;
       diag_sum += G[i][k];
     }
-    mpq_set_si(Lr[i][i], (long) diag_sum, 1);
+    Mi[i][i] = diag_sum;
 
     // Off-diagonals: -conductance between originalI and originalJ
     for (int j = 0; j < n; j++) {
       if (i == j) continue;
-      int cij = G[i][j];
-      mpq_set_si(Lr[i][j], -cij, 1);
+      Mi[i][j] = -G[i][j];
     }
   }
 
   // Current injection vector b (size n): +1A at sourceIndex (source=0 -> sourceIndex=0)
   for (int i = 0; i < n; i++)
-    mpq_set_si(b[i], 0, 1);
-  mpq_set_si(b[0], +1, 1);
+    rhsi[i] = 0;
+  rhsi[0] = 1;
 
   // Solve L' v = b
   bareiss_solve(n);
