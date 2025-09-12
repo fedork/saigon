@@ -383,24 +383,24 @@ void gen_all(int k) {
     memset(G, 0, sizeof(G));
     gen_m(size, k, 0, k);
   }
-  gmp_printf("for k = %d lr = %Qd ur = %Qd t=%ds\n",
-             k,
-             lower_r,
-             upper_r,
-             (long) (clock() - start) / CLOCKS_PER_SEC);
-  printf("Lower G: ");
+
+  gmp_printf("RESULT k=%d lower %Qd circuit: ", k, lower_r);
   print_adjacency_vector(lower_size, lower_G);
-  printf("\nLower voltage vector:\n");
+  printf(" voltages=");
   for (int i = 0; i < lower_size - 1; i++) {
-    gmp_printf("%Qd ", lower_V[i]);
+    if (i > 0) printf(","); else printf("[");
+    gmp_printf("%Qd", lower_V[i]);
   }
-  printf("\nUpper G: ");
+  printf("] t=%lus\n", (clock() - start) / CLOCKS_PER_SEC);
+
+  gmp_printf("RESULT k=%d upper %Qd circuit: ", k, upper_r);
   print_adjacency_vector(upper_size, upper_G);
-  printf("\nUpper voltage vector:\n");
+  printf(" voltages=");
   for (int i = 0; i < upper_size - 1; i++) {
-    gmp_printf("%Qd ", upper_V[i]);
+    if (i > 0) printf(","); else printf("[");
+    gmp_printf("%Qd", upper_V[i]);
   }
-  printf("\n");
+  printf("] t=%lus\n", (clock() - start) / CLOCKS_PER_SEC);
 
   fflush(stdout);
 }
