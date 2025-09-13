@@ -161,14 +161,14 @@ static int64_t bareiss_det_int64(int n, int64_t A[MAX_N][MAX_N]) {
 }
 
 /*
- * Compute the equivalent conductance Geq between node 0 (source) and node N-1 (sink)
+ * Compute the equivalent resistance Geq between node 0 (source) and node N-1 (sink)
  * for the current conductance matrix G (NxN, symmetric, integer).
  * Writes Geq as an exact rational into out_geq (caller must mpq_init it).
  *
  * Geq = det(L') / det(L' without row/col 0), where L' is the reduced Laplacian
  * (L with sink row/col removed). This avoids solving the full system.
  */
-void compute_equivalent_conductance_int64(int N) {
+void compute_equivalent_resistance_int64(int N) {
   const int n = N - 1;
 
   // Build reduced Laplacian L' into A (size n x n)
@@ -194,37 +194,15 @@ void compute_equivalent_conductance_int64(int N) {
   int64_t D = bareiss_det_int64(n, A_det);
 
   // Build A_minor = A with row/col 0 removed (size (n-1) x (n-1))
-  int64_t D0;
+  int64_t D0 = 1;
   if (n>1) {
     int64_t A_minor[MAX_N][MAX_N];
     for (int i = 1; i < n; i++) {
       memcpy(&A_minor[i-1][0], &A[i][1], (n-1) * sizeof(int64_t));
     }
     D0 = bareiss_det_int64(n - 1, A_minor);
-  } else {
-    D0 = 1;
   }
-
-  if (D0 == 0) {
-    printf("ERROR: D0 == 0\n");
-    printf("G:\n");
-    for (int i = 0; i < N; i++) {
-      for (int j = 0; j < N; j++) {
-        printf("%lld ", G[i][j]);
-      }
-      printf("\n");
-    }
-    printf("A:\n");
-    for (int i = 0; i < n; i++) {
-      for (int j = 0; j < n; j++) {
-        printf("%lld ", A[i][j]);
-      }
-    }
-    printf("\n");
-    printf("D0: %lld\n", D0);
-    exit(1);
-  }
-  mpq_set_si(R, D, D0);
+  mpq_set_si(R, D0, D);
   mpq_canonicalize(R);
 }
 
@@ -374,7 +352,7 @@ void gen_m(int size, int64_t k, int row, int64_t max_sink_links) {
     // printf("---\n");
     // ----
 
-    compute_equivalent_conductance_int64(size);
+    compute_equivalent_resistance_int64(size);
     // calculate_voltage_vector_from_conductance(size);
 
     int cmp = mpq_cmp_si(R, 1, 1);
@@ -506,7 +484,7 @@ int main() {
 
   // gen_all(4);
 
-  for (int k = 1; k < MAX_N; k++) {
+  for (int k = 2; k < MAX_N; k++) {
     gen_all(k);
   }
 
