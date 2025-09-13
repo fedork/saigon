@@ -6,7 +6,7 @@
 #include <stdint.h>
 #include <assert.h>
 
-#define MAX_N 30
+#define MAX_N 23
 
 #define base_row (row + 1)
 #define fwd_row_count (size - base_row)
@@ -16,24 +16,21 @@ static int64_t Mi[MAX_N][MAX_N];
 static int64_t rhsi[MAX_N];
 static mpq_t temp;
 static mpq_t V[MAX_N];
-static mpq_t lower_V[MAX_N];
-static mpq_t upper_V[MAX_N];
 static mpq_t upper_r, lower_r;
+static mpq_t R;
 
-static int G[MAX_N][MAX_N] = {0};
-static int lower_G[MAX_N][MAX_N];
-static int upper_G[MAX_N][MAX_N];
+static int64_t G[MAX_N][MAX_N] = {0};
+static int64_t lower_G[MAX_N][MAX_N];
+static int64_t upper_G[MAX_N][MAX_N];
 static int lower_size;
 static int upper_size;
 static clock_t start;
 
 
 void init_static_vars() {
-  mpq_inits(temp, upper_r, lower_r, NULL);
+  mpq_inits(temp, upper_r, lower_r, R, NULL);
   for (int i = 0; i < MAX_N; i++) {
     mpq_init(V[i]);
-    mpq_init(lower_V[i]);
-    mpq_init(upper_V[i]);
   }
 }
 
@@ -113,11 +110,6 @@ void calculate_voltage_vector_from_conductance(const int N) {
   bareiss_solve(n);
 }
 
-typedef struct {
-  int from;
-  int to;
-} Edge;
-
 void populate_conductance_matrix(int n, const char *edge_list) {
   // Clear matrix
   memset(G, 0, sizeof(G));
@@ -147,6 +139,95 @@ void populate_conductance_matrix(int n, const char *edge_list) {
   }
 }
 
+/*
+ * Fraction-free determinant (Bareiss) on int64_t matrix (in-place).
+ * Uses __int128 intermediates to avoid overflow in the product/subtraction step.
+ * Returns the exact determinant as int64_t (beware potential overflow for larger values).
+ */
+static int64_t bareiss_det_int64(int n, int64_t A[MAX_N][MAX_N]) {
+  int64_t prev_pivot = 1;
+  for (int k = 0; k < n - 1; k++) {
+    int64_t pivot = A[k][k];
+    assert(pivot != 0);
+    for (int i = k + 1; i < n; i++) {
+      for (int j = k + 1; j < n; j++) {
+        __int128 val = (__int128)A[i][j] * pivot - (__int128)A[i][k] * A[k][j];
+        A[i][j] = (int64_t)(val / prev_pivot);
+      }
+    }
+    prev_pivot = pivot;
+  }
+  return A[n - 1][n - 1];
+}
+
+/*
+ * Compute the equivalent conductance Geq between node 0 (source) and node N-1 (sink)
+ * for the current conductance matrix G (NxN, symmetric, integer).
+ * Writes Geq as an exact rational into out_geq (caller must mpq_init it).
+ *
+ * Geq = det(L') / det(L' without row/col 0), where L' is the reduced Laplacian
+ * (L with sink row/col removed). This avoids solving the full system.
+ */
+void compute_equivalent_conductance_int64(int N) {
+  const int n = N - 1;
+
+  // Build reduced Laplacian L' into A (size n x n)
+  int64_t A[MAX_N][MAX_N];
+  for (int i = 0; i < n; i++) {
+    long long diag_sum = 0;
+    for (int k = 0; k < N; k++) {
+      if (k == i) continue;
+      diag_sum += G[i][k];
+    }
+    A[i][i] = (int64_t)diag_sum;
+    for (int j = 0; j < n; j++) {
+      if (i == j) continue;
+      A[i][j] = - (int64_t)G[i][j];
+    }
+  }
+
+  // Copy A to compute D = det(A)
+  int64_t A_det[MAX_N][MAX_N];
+  memcpy(A_det, A, sizeof(A_det));
+
+
+  int64_t D = bareiss_det_int64(n, A_det);
+
+  // Build A_minor = A with row/col 0 removed (size (n-1) x (n-1))
+  int64_t D0;
+  if (n>1) {
+    int64_t A_minor[MAX_N][MAX_N];
+    for (int i = 1; i < n; i++) {
+      memcpy(&A_minor[i-1][0], &A[i][1], (n-1) * sizeof(int64_t));
+    }
+    D0 = bareiss_det_int64(n - 1, A_minor);
+  } else {
+    D0 = 1;
+  }
+
+  if (D0 == 0) {
+    printf("ERROR: D0 == 0\n");
+    printf("G:\n");
+    for (int i = 0; i < N; i++) {
+      for (int j = 0; j < N; j++) {
+        printf("%lld ", G[i][j]);
+      }
+      printf("\n");
+    }
+    printf("A:\n");
+    for (int i = 0; i < n; i++) {
+      for (int j = 0; j < n; j++) {
+        printf("%lld ", A[i][j]);
+      }
+    }
+    printf("\n");
+    printf("D0: %lld\n", D0);
+    exit(1);
+  }
+  mpq_set_si(R, D, D0);
+  mpq_canonicalize(R);
+}
+
 
 // ---------- Example usage ----------
 
@@ -156,14 +237,14 @@ void calc(int n, char *edge_list) {
   gmp_printf("Equivalent resistance = %Qd for %s\n", V[0], edge_list);
 }
 
-void set_g(int i, int j, int g) {
+void set_g(int i, int j, int64_t g) {
   G[i][j] = g;
   G[j][i] = g;
 }
 
-void gen_m(int size, int k, int row, int max_sink_links);
+void gen_m(int size, int64_t k, int row, int64_t max_sink_links);
 
-void gen_m2(int size, int k, int row, const int groups[MAX_N], int group_index, int group_count, int max_sink_links) {
+void gen_m2(int size, int64_t k, int row, const int groups[MAX_N], int group_index, int group_count, int64_t max_sink_links) {
   if (k <= 0) return;
   // find indices for the group
   int group_indices[MAX_N];
@@ -179,10 +260,10 @@ void gen_m2(int size, int k, int row, const int groups[MAX_N], int group_index, 
     assert(G[row][group_indices[j]] == 0 && "group must be empty");
   }
 
-  int max_to_use = k - (size - row - 2);
+  int64_t max_to_use = k - (size - row - 2);
   assert(max_to_use > 0 && "max_to_use must be positive");
 
-  int current_sum = 0;
+  int64_t current_sum = 0;
   if (group_index == group_count - 1) {
     // last group
     int used_any = 0;
@@ -217,7 +298,7 @@ void gen_m2(int size, int k, int row, const int groups[MAX_N], int group_index, 
     // }
     // ----
     // continue recursively
-    int max_sink_link_next = group_index == 0 ? max_sink_links - current_sum : max_sink_links;
+    int64_t max_sink_link_next = group_index == 0 ? max_sink_links - current_sum : max_sink_links;
     if (group_index == group_count - 1 || current_sum == max_to_use) {
       // if this was the last group or if we used max already - go to the next row
       if (row == 0) {
@@ -243,7 +324,7 @@ void gen_m2(int size, int k, int row, const int groups[MAX_N], int group_index, 
         break;
       }
       do {
-        int to_return = G[row][group_indices[i]];
+        int64_t to_return = G[row][group_indices[i]];
         set_g(row, group_indices[i], 0);
         current_sum -= to_return;
         i--;
@@ -267,7 +348,7 @@ void gen_m2(int size, int k, int row, const int groups[MAX_N], int group_index, 
 }
 
 
-void gen_m(int size, int k, int row, int max_sink_links) {
+void gen_m(int size, int64_t k, int row, int64_t max_sink_links) {
   int row_connected = (row == 0);
   int i = 0;
   while (i < row && !row_connected) {
@@ -293,28 +374,23 @@ void gen_m(int size, int k, int row, int max_sink_links) {
     // printf("---\n");
     // ----
 
-    calculate_voltage_vector_from_conductance(size);
+    compute_equivalent_conductance_int64(size);
+    // calculate_voltage_vector_from_conductance(size);
 
-    int cmp = mpq_cmp_si(V[0], 1, 1);
+    int cmp = mpq_cmp_si(R, 1, 1);
     if (cmp < 0) {
-      int cmp1 = mpq_cmp(V[0], lower_r);
+      int cmp1 = mpq_cmp(R, lower_r);
       if (cmp1 > 0) {
-        mpq_set(lower_r, V[0]);
+        mpq_set(lower_r, R);
         memcpy(lower_G, G, sizeof(G));
         lower_size = size;
-        for (int i = 0; i < size; i++) {
-          mpq_set(lower_V[i], V[i]);
-        }
       }
     } else if (cmp > 0) {
-      int cmp1 = mpq_cmp(V[0], upper_r);
+      int cmp1 = mpq_cmp(R, upper_r);
       if (cmp1 < 0) {
-        mpq_set(upper_r, V[0]);
+        mpq_set(upper_r, R);
         memcpy(upper_G, G, sizeof(G));
         upper_size = size;
-        for (int i = 0; i < size; i++) {
-          mpq_set(upper_V[i], V[i]);
-        }
       }
     }
 
@@ -362,7 +438,7 @@ void clear_g(int size) {
   memset(G, 0, sizeof(G));
 }
 
-void print_adjacency_vector(int size, const int matrix[MAX_N][MAX_N]) {
+void print_adjacency_vector(int size, const int64_t matrix[MAX_N][MAX_N]) {
   int first = 1;
   for (int i = 0; i < size; i++) {
     for (int j = i + 1; j < size; j++) {
@@ -370,7 +446,7 @@ void print_adjacency_vector(int size, const int matrix[MAX_N][MAX_N]) {
         if (!first) printf(",");
         first = 0;
         printf("[%d,%d]", i + 1, j + 1);
-        if (matrix[i][j] > 1) printf("^%d", matrix[i][j]);
+        if (matrix[i][j] > 1) printf("^%lld", matrix[i][j]);
       }
     }
   }
@@ -387,18 +463,22 @@ void gen_all(int k) {
   gmp_printf("RESULT k=%d lower %Qd circuit: ", k, lower_r);
   print_adjacency_vector(lower_size, lower_G);
   printf(" voltages=");
+  memcpy(G, lower_G, sizeof(G));
+  calculate_voltage_vector_from_conductance(lower_size);
   for (int i = 0; i < lower_size - 1; i++) {
     if (i > 0) printf(","); else printf("[");
-    gmp_printf("%Qd", lower_V[i]);
+    gmp_printf("%Qd", V[i]);
   }
   printf("] t=%lus\n", (clock() - start) / CLOCKS_PER_SEC);
 
   gmp_printf("RESULT k=%d upper %Qd circuit: ", k, upper_r);
   print_adjacency_vector(upper_size, upper_G);
   printf(" voltages=");
+  memcpy(G, upper_G, sizeof(G));
+  calculate_voltage_vector_from_conductance(upper_size);
   for (int i = 0; i < upper_size - 1; i++) {
     if (i > 0) printf(","); else printf("[");
-    gmp_printf("%Qd", upper_V[i]);
+    gmp_printf("%Qd", V[i]);
   }
   printf("] t=%lus\n", (clock() - start) / CLOCKS_PER_SEC);
 
