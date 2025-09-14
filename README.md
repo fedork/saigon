@@ -1,6 +1,10 @@
 # Saigon Project
 
-This project contains a C program for analyzing electrical circuits, likely related to finding equivalent resistance in complex networks. It uses the GMP library for arbitrary-precision arithmetic.
+This project contains a C program for analyzing electrical circuits. 
+It uses the GMP library for arbitrary-precision arithmetic.
+This is a solver for "Saigon Towers" https://oeis.org/A384183 and for 
+https://oeis.org/A339548 and https://oeis.org/A339808 (resistor networks 
+with resistances approaching 1)
 
 ## Prerequisites
 

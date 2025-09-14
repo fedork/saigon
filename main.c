@@ -341,19 +341,7 @@ void gen_m(int size, int64_t k, int row, int64_t max_sink_links) {
 
     set_g(row, row + 1, k);
 
-    // ----
-    // printf("Conductance matrix G for size=%d:\n", size);
-    // for (int i = 0; i < size; i++) {
-    //   for (int j = 0; j < size; j++) {
-    //     printf("%d ", G[i][j]);
-    //   }
-    //   printf("\n");
-    // }
-    // printf("---\n");
-    // ----
-
     compute_equivalent_resistance_int64(size);
-    // calculate_voltage_vector_from_conductance(size);
 
     int cmp = mpq_cmp_si(R, 1, 1);
     if (cmp < 0) {
@@ -407,7 +395,6 @@ void gen_m(int size, int64_t k, int row, int64_t max_sink_links) {
       }
     }
 
-    //
     gen_m2(size, k, row, row_offset_to_group, 0, nxt_grp, max_sink_links);
   }
 }
