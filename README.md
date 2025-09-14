@@ -50,3 +50,9 @@ The executable `saigon` will be created in the `build` directory. You can run it
 ```sh
 ./build/saigon
 ```
+
+## Clean, build and run in one step:
+
+```sh
+rm -r build ; cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build  && ./build/saigon
+```
