@@ -29,6 +29,8 @@ static clock_t start;
 
 void init_static_vars() {
   mpq_inits(temp, upper_r, lower_r, R, NULL);
+  mpq_set_si(lower_r, 0, 1);
+  mpq_set_si(upper_r, MAX_N + 1, 1);
   for (int i = 0; i < MAX_N; i++) {
     mpq_init(V[i]);
   }
@@ -168,7 +170,7 @@ static int64_t bareiss_det_int64(int n, int64_t A[MAX_N][MAX_N]) {
  * Geq = det(L') / det(L' without row/col 0), where L' is the reduced Laplacian
  * (L with sink row/col removed). This avoids solving the full system.
  */
-void compute_equivalent_resistance_int64(int N) {
+void compute_equivalent_resistance_int64(int N, int64_t m[MAX_N][MAX_N]) {
   const int n = N - 1;
 
   // Build reduced Laplacian L' into A (size n x n)
@@ -177,12 +179,12 @@ void compute_equivalent_resistance_int64(int N) {
     long long diag_sum = 0;
     for (int k = 0; k < N; k++) {
       if (k == i) continue;
-      diag_sum += G[i][k];
+      diag_sum += m[i][k];
     }
-    A[i][i] = (int64_t)diag_sum;
+    A[i][i] = diag_sum;
     for (int j = 0; j < n; j++) {
       if (i == j) continue;
-      A[i][j] = - (int64_t)G[i][j];
+      A[i][j] = - m[i][j];
     }
   }
 
@@ -316,6 +318,21 @@ void gen_m2(int size, int64_t k, int row, const int groups[MAX_N], int group_ind
     } else {
       // increment current (no need to worry about backtracking?!)
       set_g(row, group_indices[i], G[row][group_indices[i]] + 1);
+      if (group_index == 0) {
+        // compute upper bound for all potential circuits and prune if it is already below lower_r
+        int64_t m1[MAX_N][MAX_N];
+        memcpy(m1, G, sizeof(G));
+        // set most conservative forward links
+        for (int j = row; j < size - 1 ; j++) {
+          m1[j][j+1] = 1;
+          m1[j+1][j] = 1;
+        }
+        compute_equivalent_resistance_int64(size, m1);
+        if (mpq_cmp(R, lower_r) <= 0) {
+          // gmp_printf("R = %Qd lower_r = %Qd\n", R, lower_r);
+          break;
+        }
+      }
       current_sum++;
     }
   }
@@ -341,7 +358,7 @@ void gen_m(int size, int64_t k, int row, int64_t max_sink_links) {
 
     set_g(row, row + 1, k);
 
-    compute_equivalent_resistance_int64(size);
+    compute_equivalent_resistance_int64(size, G);
 
     int cmp = mpq_cmp_si(R, 1, 1);
     if (cmp < 0) {
@@ -363,6 +380,22 @@ void gen_m(int size, int64_t k, int row, int64_t max_sink_links) {
     // clear
     set_g(row, row + 1, 0);
   } else {
+    if (row > 0) {
+      // compute lower bound for all potential circuits and prune if it is above upper_r
+      int64_t m1[MAX_N][MAX_N];
+      memcpy(m1, G, sizeof(G));
+      // set most conservative forward links
+      for (int j = row; j < size - 1 ; j++) {
+        m1[j][size - 1] = m1[size - 1][j] = (j == size - 2) ? max_sink_links : (max_sink_links - 1);
+        m1[j-1][j] = m1[j][j-1] = 10; // to avoid loose nodes
+      }
+      compute_equivalent_resistance_int64(size, m1);
+      if (mpq_cmp(R, upper_r) >= 0) {
+        // gmp_printf("R = %Qd lower_r = %Qd\n", R, lower_r);
+        return;
+      }
+    }
+
     // group following rows if their connections are identical
     // rows from row+1
     int row_offset_to_group[MAX_N];
@@ -418,8 +451,6 @@ void print_adjacency_vector(int size, const int64_t matrix[MAX_N][MAX_N]) {
 }
 
 void gen_all(int k) {
-  mpq_set_si(lower_r, 0, 1);
-  mpq_set_si(upper_r, k + 1, 1);
   for (int size = 2; size <= k + 1; size++) {
     memset(G, 0, sizeof(G));
     gen_m(size, k, 0, k);
