@@ -153,8 +153,8 @@ static int64_t bareiss_det_int64(int n, int64_t A[MAX_N][MAX_N]) {
     assert(pivot != 0);
     for (int i = k + 1; i < n; i++) {
       for (int j = k + 1; j < n; j++) {
-        __int128 val = (__int128)A[i][j] * pivot - (__int128)A[i][k] * A[k][j];
-        A[i][j] = (int64_t)(val / prev_pivot);
+        __int128 val = (__int128) A[i][j] * pivot - (__int128) A[i][k] * A[k][j];
+        A[i][j] = (int64_t) (val / prev_pivot);
       }
     }
     prev_pivot = pivot;
@@ -184,7 +184,7 @@ void compute_equivalent_resistance_int64(int N, int64_t m[MAX_N][MAX_N]) {
     A[i][i] = diag_sum;
     for (int j = 0; j < n; j++) {
       if (i == j) continue;
-      A[i][j] = - m[i][j];
+      A[i][j] = -m[i][j];
     }
   }
 
@@ -197,7 +197,7 @@ void compute_equivalent_resistance_int64(int N, int64_t m[MAX_N][MAX_N]) {
 
   // Build A_minor = A with row/col 0 removed (size (n-1) x (n-1))
   int64_t D0 = 1;
-  if (n>1) {
+  if (n > 1) {
     int64_t A_minor[MAX_N][MAX_N];
     for (int i = 1; i < n; i++) {
       memcpy(&A_minor[i-1][0], &A[i][1], (n-1) * sizeof(int64_t));
@@ -220,6 +220,17 @@ void calc(int n, char *edge_list) {
 void set_g(int i, int j, int64_t g) {
   G[i][j] = g;
   G[j][i] = g;
+}
+
+void print_matrix_state(int size) {
+  // Print matrix state
+  printf("Matrix %dx%d:\n", size, size);
+  for (int i = 0; i < size; i++) {
+    for (int j = 0; j < size; j++) {
+      printf("%lld,", G[i][j]);
+    }
+    printf("\n");
+  }
 }
 
 void gen_m(int size, int64_t k, int row, int64_t max_sink_links);
@@ -289,6 +300,7 @@ void gen_m2(int size, int64_t k, int row, const int groups[MAX_N], int group_ind
           max_sink_link_next += G[0][j];
         }
       }
+      // print_matrix_state(size);
       gen_m(size, k - current_sum, row + 1, max_sink_link_next);
     } else {
       gen_m2(size, k - current_sum, row, groups, group_index + 1, group_count, max_sink_link_next);
@@ -323,9 +335,9 @@ void gen_m2(int size, int64_t k, int row, const int groups[MAX_N], int group_ind
         int64_t m1[MAX_N][MAX_N];
         memcpy(m1, G, sizeof(G));
         // set most conservative forward links
-        for (int j = row; j < size - 1 ; j++) {
-          m1[j][j+1] = 1;
-          m1[j+1][j] = 1;
+        for (int j = row; j < size - 1; j++) {
+          m1[j][j + 1] = 1;
+          m1[j + 1][j] = 1;
         }
         compute_equivalent_resistance_int64(size, m1);
         if (mpq_cmp(R, lower_r) <= 0) {
@@ -358,7 +370,12 @@ void gen_m(int size, int64_t k, int row, int64_t max_sink_links) {
 
     set_g(row, row + 1, k);
 
+    // print_matrix_state(size);
+
     compute_equivalent_resistance_int64(size, G);
+
+    // gmp_printf("resistance = %Qd\n", R);
+    // if (mpq_cmp_si(R, 19088, 19087) == 0) exit(0);
 
     int cmp = mpq_cmp_si(R, 1, 1);
     if (cmp < 0) {
@@ -385,9 +402,9 @@ void gen_m(int size, int64_t k, int row, int64_t max_sink_links) {
       int64_t m1[MAX_N][MAX_N];
       memcpy(m1, G, sizeof(G));
       // set most conservative forward links
-      for (int j = row; j < size - 1 ; j++) {
+      for (int j = row; j < size - 1; j++) {
         m1[j][size - 1] = m1[size - 1][j] = (j == size - 2) ? max_sink_links : (max_sink_links - 1);
-        m1[j-1][j] = m1[j][j-1] = 10; // to avoid loose nodes
+        m1[j - 1][j] = m1[j][j - 1] = 10; // to avoid loose nodes
       }
       compute_equivalent_resistance_int64(size, m1);
       if (mpq_cmp(R, upper_r) >= 0) {
@@ -401,8 +418,10 @@ void gen_m(int size, int64_t k, int row, int64_t max_sink_links) {
     int row_offset_to_group[MAX_N];
     memset(row_offset_to_group, 0, sizeof(row_offset_to_group));
     // sink is group 0
-    int nxt_grp = 1;
-    for (int row_offset = 0; row_offset < fwd_row_count - 1; row_offset++) {
+    // last-before-sink is group 1
+    row_offset_to_group[fwd_row_count - 2] = 1;
+    int nxt_grp = 2;
+    for (int row_offset = 0; row_offset < fwd_row_count - 2; row_offset++) {
       int max_group_seen = 0;
       for (int i = 0; row_offset_to_group[row_offset] == 0 && i < row_offset; i++) {
         if (row_offset_to_group[i] <= max_group_seen) continue;
@@ -485,6 +504,53 @@ void gen_all(int k) {
 int main(int argc, char *argv[]) {
   init_static_vars();
   start = clock();
+
+  /*
+    [0,1,1,1,0,0,0,0,0,0,0]
+    [1,0,0,0,1,1,0,0,0,0,0]
+    [1,0,0,0,1,0,1,0,1,0,0]
+    [1,0,0,0,0,1,0,1,0,0,1]
+    [0,1,1,0,0,0,0,1,0,1,0]
+    [0,1,0,1,0,0,1,0,0,1,0]
+    [0,0,1,0,0,1,0,1,0,0,0]
+    [0,0,0,1,1,0,1,0,1,0,0]
+    [0,0,1,0,0,0,0,1,0,1,0]
+    [0,0,0,0,1,1,0,0,1,0,1]
+    [0,0,0,1,0,0,0,0,0,1,0]
+
+
+    [1,2],[1,3],[1,4],[2,5],[2,6],[3,5],[3,7],[3,9],[4,6],[4,8],[4,11],[5,8],[5,10],[6,7],[6,10],[7,8],[8,9],[9,10],[10,11]
+
+    */
+
+  set_g(0, 1, 1);
+  set_g(0, 2, 1);
+  set_g(0, 3, 1);
+  set_g(1, 4, 1);
+  set_g(1, 5, 1);
+  // set_g(2, 4, 1);
+  // set_g(2, 6, 1);
+  // set_g(2, 8, 1);
+  // set_g(3, 5, 1);
+  // set_g(3, 7, 1);
+  // set_g(3, 10, 1);
+  // set_g(4, 7, 1);
+  // set_g(4, 9, 1);
+  // set_g(5, 6, 1);
+  // set_g(5, 9, 1);
+  // set_g(6, 7, 1);
+  // set_g(7,8,1);
+  // set_g(8,9,1);
+  // set_g(9,10,1);
+
+  // gen_m(11, 14, 2, 3);
+
+  // return 0;
+  // calc(11,
+       // "[1,2],[1,3],[2,4],[2,5],[2,7],[3,5],[3,6],[3,11],[4,6],[4,9],[5,8],[5,10],[6,7],[6,8],[7,9],[7,10],[8,9],[9,11],[10,11]");
+  // calc(11,
+       // "[1,2],[1,3],[1,4],[2,5],[2,6],[3,5],[3,7],[3,9],[4,6],[4,8],[4,11],[5,8],[5,10],[6,7],[6,10],[7,8],[8,9],[9,10],[10,11]");
+
 
   int start_k = 2; // default value
   if (argc > 1) {
