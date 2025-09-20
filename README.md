@@ -30,7 +30,11 @@ brew install cmake pkg-config gmp
 
 ## Building
 
-1.  **Configure the project using CMake.**
+This project now builds two executables:
+- saigon
+- saigon_util (a utility copy of saigon.c)
+
+1.  Configure the project using CMake.
 
     For a debug build, run this from the project root:
     ```sh
@@ -42,17 +46,23 @@ brew install cmake pkg-config gmp
     cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
     ```
 
-2.  **Compile the code:**
+2.  Compile all targets:
     ```sh
     cmake --build build
     ```
 
+    Or build a specific target, for example only saigon_util:
+    ```sh
+    cmake --build build --target saigon_util
+    ```
+
 ## Running
 
-The executable `saigon` will be created in the `build` directory. You can run it from the project root like this:
+The executables will be created in the build directory. Examples:
 
 ```sh
 ./build/saigon
+./build/saigon_util
 ```
 
 ## Clean, build and run in one step:

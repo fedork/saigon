@@ -370,12 +370,15 @@ void gen_m(int size, int64_t k, int row, int64_t max_sink_links) {
 
     set_g(row, row + 1, k);
 
-    // print_matrix_state(size);
+#ifdef PRINT_MATRIX
+    print_matrix_state(size);
+#endif
 
     compute_equivalent_resistance_int64(size, G);
 
-    // gmp_printf("resistance = %Qd\n", R);
-    // if (mpq_cmp_si(R, 19088, 19087) == 0) exit(0);
+#ifdef PRINT_RES
+    gmp_printf("resistance = %Qd\n", R);
+#endif
 
     int cmp = mpq_cmp_si(R, 1, 1);
     if (cmp < 0) {
@@ -500,70 +503,3 @@ void gen_all(int k) {
   fflush(stdout);
 }
 
-
-int main(int argc, char *argv[]) {
-  init_static_vars();
-  start = clock();
-
-  /*
-    [0,1,1,1,0,0,0,0,0,0,0]
-    [1,0,0,0,1,1,0,0,0,0,0]
-    [1,0,0,0,1,0,1,0,1,0,0]
-    [1,0,0,0,0,1,0,1,0,0,1]
-    [0,1,1,0,0,0,0,1,0,1,0]
-    [0,1,0,1,0,0,1,0,0,1,0]
-    [0,0,1,0,0,1,0,1,0,0,0]
-    [0,0,0,1,1,0,1,0,1,0,0]
-    [0,0,1,0,0,0,0,1,0,1,0]
-    [0,0,0,0,1,1,0,0,1,0,1]
-    [0,0,0,1,0,0,0,0,0,1,0]
-
-
-    [1,2],[1,3],[1,4],[2,5],[2,6],[3,5],[3,7],[3,9],[4,6],[4,8],[4,11],[5,8],[5,10],[6,7],[6,10],[7,8],[8,9],[9,10],[10,11]
-
-    */
-
-  set_g(0, 1, 1);
-  set_g(0, 2, 1);
-  set_g(0, 3, 1);
-  set_g(1, 4, 1);
-  set_g(1, 5, 1);
-  // set_g(2, 4, 1);
-  // set_g(2, 6, 1);
-  // set_g(2, 8, 1);
-  // set_g(3, 5, 1);
-  // set_g(3, 7, 1);
-  // set_g(3, 10, 1);
-  // set_g(4, 7, 1);
-  // set_g(4, 9, 1);
-  // set_g(5, 6, 1);
-  // set_g(5, 9, 1);
-  // set_g(6, 7, 1);
-  // set_g(7,8,1);
-  // set_g(8,9,1);
-  // set_g(9,10,1);
-
-  // gen_m(11, 14, 2, 3);
-
-  // return 0;
-  // calc(11,
-       // "[1,2],[1,3],[2,4],[2,5],[2,7],[3,5],[3,6],[3,11],[4,6],[4,9],[5,8],[5,10],[6,7],[6,8],[7,9],[7,10],[8,9],[9,11],[10,11]");
-  // calc(11,
-       // "[1,2],[1,3],[1,4],[2,5],[2,6],[3,5],[3,7],[3,9],[4,6],[4,8],[4,11],[5,8],[5,10],[6,7],[6,10],[7,8],[8,9],[9,10],[10,11]");
-
-
-  int start_k = 2; // default value
-  if (argc > 1) {
-    start_k = atoi(argv[1]);
-    if (start_k < 2 || start_k >= MAX_N) {
-      printf("Starting k must be between 2 and %d\n", MAX_N - 1);
-      return 1;
-    }
-  }
-
-  for (int k = start_k; k < MAX_N; k++) {
-    gen_all(k);
-  }
-
-  return 0;
-}
