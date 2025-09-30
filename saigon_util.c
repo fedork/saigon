@@ -6,7 +6,7 @@
 int main(int argc, char *argv[]) {
   init_static_vars();
 
-  gen_m(7, 11, 0, 11);
+  gen_all_size(19, 11);
 
 
   // start = clock();

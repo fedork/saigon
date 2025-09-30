@@ -36,6 +36,17 @@ void init_static_vars() {
   }
 }
 
+void print_matrix_state(int size) {
+  // Print matrix state
+  printf("Matrix %dx%d:\n", size, size);
+  for (int i = 0; i < size; i++) {
+    for (int j = 0; j < size; j++) {
+      printf("%lld,", G[i][j]);
+    }
+    printf("\n");
+  }
+}
+
 // ---------- Bareiss elimination (fraction-free on integers) ----------
 
 /*
@@ -204,6 +215,14 @@ void compute_equivalent_resistance_int64(int N, int64_t m[MAX_N][MAX_N]) {
     }
     D0 = bareiss_det_int64(n - 1, A_minor);
   }
+
+#ifndef NDEBUG
+  if (D == 0) {
+    printf("ERROR: determinant is zero\n");
+    print_matrix_state(N);
+    assert(0);
+  }
+#endif
   mpq_set_si(R, D0, D);
   mpq_canonicalize(R);
 }
@@ -222,40 +241,40 @@ void set_g(int i, int j, int64_t g) {
   G[j][i] = g;
 }
 
-void print_matrix_state(int size) {
-  // Print matrix state
-  printf("Matrix %dx%d:\n", size, size);
-  for (int i = 0; i < size; i++) {
-    for (int j = 0; j < size; j++) {
-      printf("%lld,", G[i][j]);
-    }
-    printf("\n");
-  }
-}
+void gen_m(int size, int64_t k, int row, int64_t max_sink_links, int groups[MAX_N]);
 
-void gen_m(int size, int64_t k, int row, int64_t max_sink_links);
-
-void gen_m2(int size, int64_t k, int row, const int groups[MAX_N], int group_index, int group_count, int64_t max_sink_links) {
+void gen_m2(int size, int64_t k, int row, const int groups[MAX_N], const int groups_prev[MAX_N], int group_start, int64_t max_sink_links) {
   if (k <= 0) return;
-  // find indices for the group
-  int group_indices[MAX_N];
-  int group_size = 0;
-  for (int i = 0; i < fwd_row_count; i++) {
-    if (groups[i] == group_index) {
-      group_indices[group_size++] = base_row + i;
+
+  // assert group is empty
+#ifndef NDEBUG
+  for (int j = group_start; j < size && groups[j] == groups[group_start]; j++) {
+    if (G[row][j] != 0) {
+      printf("row %d group %d is not empty\n", row, group_start);
+      printf("groups:");
+      for (int i = 0; i < size; i++) {
+        printf(" %d", groups[i]);
+      }
+      printf("\n");
+      print_matrix_state(size);
+      assert(0);
     }
   }
-
-  //reset the group
-  for (int j = 0; j < group_size; j++) {
-    assert(G[row][group_indices[j]] == 0 && "group must be empty");
-  }
+#endif
 
   int64_t max_to_use = k - (size - row - 2);
   assert(max_to_use > 0 && "max_to_use must be positive");
 
+  int groups_next[MAX_N];
+  memcpy(groups_next, groups, sizeof(groups_next));
+
+  int next_group_start = group_start + 1;
+  while (next_group_start < size && groups_prev[next_group_start] == groups_prev[group_start])
+    next_group_start++;
+
   int64_t current_sum = 0;
-  if (group_index == group_count - 1) {
+  int is_last_group = next_group_start == size;
+  if (is_last_group) {
     // last group
     int used_any = 0;
     for (int i = row + 1; i < size; i++) {
@@ -265,16 +284,17 @@ void gen_m2(int size, int64_t k, int row, const int groups[MAX_N], int group_ind
       }
     }
     if (!used_any) {
+      if (max_sink_links == 1) return; // if only one left we need to keep it for last node
       // if we have not used any links in this row yet, then
       // the last group should have at least one non-zero element
-      set_g(row, group_indices[0], 1);
+      set_g(row, group_start, 1);
       current_sum = 1;
     }
   }
 
-  // iterate over all unique partitions (order unimportant) using between min_to_use and max_to_use among the group)
-  int i = 0;
-  int partition_count = 0;
+  // iterate over all unique partitions (order unimportant) using up to max_to_use among the group)
+  int i = group_start;
+  // int partition_count = 0;
   while (1) {
     // ----
     // if (group_size > 1) {
@@ -289,8 +309,14 @@ void gen_m2(int size, int64_t k, int row, const int groups[MAX_N], int group_ind
     // }
     // ----
     // continue recursively
-    int64_t max_sink_link_next = group_index == 0 ? max_sink_links - current_sum : max_sink_links;
-    if (group_index == group_count - 1 || current_sum == max_to_use) {
+
+    // update groups_next
+    for (int j = group_start + 1; j < next_group_start; j++) {
+      groups_next[j] = G[row][j] == G[row][j - 1] ? groups_next[j - 1] : j;
+    }
+
+    int64_t max_sink_link_next = is_last_group ? max_sink_links - current_sum : max_sink_links;
+    if (is_last_group || current_sum == max_to_use) {
       // if this was the last group or if we used max already - go to the next row
       if (row == 0) {
         // to exclude inversions, we allow sink to have no more links than the source,
@@ -301,37 +327,38 @@ void gen_m2(int size, int64_t k, int row, const int groups[MAX_N], int group_ind
         }
       }
       // print_matrix_state(size);
-      gen_m(size, k - current_sum, row + 1, max_sink_link_next);
+      gen_m(size, k - current_sum, row + 1, max_sink_link_next, groups_next);
     } else {
-      gen_m2(size, k - current_sum, row, groups, group_index + 1, group_count, max_sink_link_next);
+      gen_m2(size, k - current_sum, row, groups_next, groups_prev, next_group_start, max_sink_link_next);
     }
 
-    if (current_sum == max_to_use
-      || (group_index == 0 && current_sum == max_sink_links - 1)
-      || (i > 0 && i == group_size - 1
-        && G[row][group_indices[i]] == G[row][group_indices[i - 1]])) {
+    if (current_sum == max_to_use // no more links to allocate
+      || (is_last_group && (current_sum == max_sink_links - 1)) // last group, and we used up all sink links (leaving one for the last node)
+      || (i > group_start && i == next_group_start - 1 && G[row][i] == G[row][i - 1])) {
+      // last node and maxed out
       // used up, backtrack
-      if (i == 0) {
+      if (i == group_start) {
         // no more partitions
         break;
       }
       do {
-        int64_t to_return = G[row][group_indices[i]];
-        set_g(row, group_indices[i], 0);
+        int64_t to_return = G[row][i];
+        set_g(row, i, 0);
         current_sum -= to_return;
         i--;
-      } while (i > 0 && G[row][group_indices[i]] == G[row][group_indices[i - 1]]);
-      set_g(row, group_indices[i], G[row][group_indices[i]] + 1);
+      } while (i > group_start && G[row][i] == G[row][i - 1]);
+      set_g(row, i, G[row][i] + 1);
       current_sum++;
-    } else if (i < group_size - 1 && G[row][group_indices[i]] > 0) {
+    } else if (i < next_group_start - 1 && G[row][i] > 0) {
       // not the last element - move forward
-      set_g(row, group_indices[++i], 1);
+      set_g(row, ++i, 1);
       current_sum++;
     } else {
       // increment current (no need to worry about backtracking?!)
-      set_g(row, group_indices[i], G[row][group_indices[i]] + 1);
-      if (group_index == 0) {
-        // compute upper bound for all potential circuits and prune if it is already below lower_r
+      set_g(row, i, G[row][i] + 1);
+      current_sum++;
+      if (is_last_group) {
+        // compute the upper bound for all potential circuits and prune if it is already below lower_r
         int64_t m1[MAX_N][MAX_N];
         memcpy(m1, G, sizeof(G));
         // set most conservative forward links
@@ -345,21 +372,19 @@ void gen_m2(int size, int64_t k, int row, const int groups[MAX_N], int group_ind
           break;
         }
       }
-      current_sum++;
     }
   }
   // clean up
-  for (int j = 0; j < group_size; j++) {
-    set_g(row, group_indices[j], 0);
+  for (int j = group_start; j < next_group_start; j++) {
+    set_g(row, j, 0);
   }
 }
 
-
-void gen_m(int size, int64_t k, int row, int64_t max_sink_links) {
-  int row_connected = (row == 0);
+void gen_m(int size, int64_t k, int row, int64_t max_sink_links, int groups[MAX_N]) {
+  int row_connected = row == 0;
   int i = 0;
   while (i < row && !row_connected) {
-    row_connected = (G[row][i] != 0);
+    row_connected = G[row][i] != 0;
     i++;
   }
   if (!row_connected) return;
@@ -401,7 +426,7 @@ void gen_m(int size, int64_t k, int row, int64_t max_sink_links) {
     set_g(row, row + 1, 0);
   } else {
     if (row > 0) {
-      // compute lower bound for all potential circuits and prune if it is above upper_r
+      // compute the lower bound for all potential circuits and prune if it is above upper_r
       int64_t m1[MAX_N][MAX_N];
       memcpy(m1, G, sizeof(G));
       // set most conservative forward links
@@ -416,45 +441,11 @@ void gen_m(int size, int64_t k, int row, int64_t max_sink_links) {
       }
     }
 
-    // group following rows if their connections are identical
-    // rows from row+1
-    int row_offset_to_group[MAX_N];
-    memset(row_offset_to_group, 0, sizeof(row_offset_to_group));
-    // sink is group 0
-    // last-before-sink is group 1
-    row_offset_to_group[fwd_row_count - 2] = 1;
-    int nxt_grp = 2;
-    for (int row_offset = 0; row_offset < fwd_row_count - 2; row_offset++) {
-      int max_group_seen = 0;
-      for (int i = 0; row_offset_to_group[row_offset] == 0 && i < row_offset; i++) {
-        if (row_offset_to_group[i] <= max_group_seen) continue;
-        int diff = 0;
-        for (int j = 0; diff == 0 && j < base_row; j++) {
-          if (G[base_row + row_offset][j] != G[base_row + i][j]) {
-            diff = 1;
-          }
-        }
-        if (diff == 0) {
-          // found match
-          row_offset_to_group[row_offset] = row_offset_to_group[i];
-        } else if (row_offset_to_group[i] == nxt_grp - 1) {
-          // seen all groups already
-          break;
-        } else {
-          max_group_seen = row_offset_to_group[i];
-        }
-      }
-      // if no match found create a  new group
-      if (row_offset_to_group[row_offset] == 0) {
-        row_offset_to_group[row_offset] = nxt_grp++;
-      }
-    }
-
-    gen_m2(size, k, row, row_offset_to_group, 0, nxt_grp, max_sink_links);
+    gen_m2(size, k, row, groups, groups, row + 1, max_sink_links);
   }
 }
 
-void clear_g(int size) {
+void clear_g() {
   memset(G, 0, sizeof(G));
 }
 
@@ -472,10 +463,22 @@ void print_adjacency_vector(int size, const int64_t matrix[MAX_N][MAX_N]) {
   }
 }
 
+void gen_all_size(int k, int size) {
+  memset(G, 0, sizeof(G));
+  int groups[MAX_N];
+  groups[0] = 0;
+  groups[size - 2] = size - 2;
+  groups[size - 1] = size - 1;
+  for (int i = 1; i < size - 2; i++) {
+    // all others in one group
+    groups[i] = 1;
+  }
+  gen_m(size, k, 0, k, groups);
+}
+
 void gen_all(int k) {
   for (int size = 2; size <= k + 1; size++) {
-    memset(G, 0, sizeof(G));
-    gen_m(size, k, 0, k);
+    gen_all_size(k, size);
   }
 
   gmp_printf("RESULT k=%d lower %Qd circuit: ", k, lower_r);
@@ -484,7 +487,8 @@ void gen_all(int k) {
   memcpy(G, lower_G, sizeof(G));
   calculate_voltage_vector_from_conductance(lower_size);
   for (int i = 0; i < lower_size - 1; i++) {
-    if (i > 0) printf(","); else printf("[");
+    if (i > 0) printf(",");
+    else printf("[");
     gmp_printf("%Qd", V[i]);
   }
   printf("] t=%lus\n", (clock() - start) / CLOCKS_PER_SEC);
@@ -495,11 +499,11 @@ void gen_all(int k) {
   memcpy(G, upper_G, sizeof(G));
   calculate_voltage_vector_from_conductance(upper_size);
   for (int i = 0; i < upper_size - 1; i++) {
-    if (i > 0) printf(","); else printf("[");
+    if (i > 0) printf(",");
+    else printf("[");
     gmp_printf("%Qd", V[i]);
   }
   printf("] t=%lus\n", (clock() - start) / CLOCKS_PER_SEC);
 
   fflush(stdout);
 }
-
